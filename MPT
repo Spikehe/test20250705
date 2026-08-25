@@ -1,0 +1,129 @@
+Portfolio Optimization Analysis with 4.5% Target Return
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+# 1. Define asset parameters precisely from the problem data
+assets = ['Bonds', 'Equity', 'Real Estate', 'Commodities']
+mu = np.array([0.04, 0.08, 0.06, 0.10])            # Expected returns
+std_deviations = np.array([0.05, 0.20, 0.12, 0.25]) # Volatilities
+rf = 0.02                                           # Risk-free rate
+target_return = 0.045                               # Adjusted target return (4.5%)
+
+# Correlation Matrix (rho)
+rho = np.array([
+    [1.00, 0.20, 0.15, 0.05],
+    [0.20, 1.00, 0.60, 0.40],
+    [0.15, 0.60, 1.00, 0.30],
+    [0.05, 0.40, 0.30, 1.00]
+])
+
+# 2. Compute Covariance Matrix (Sigma) and its Inverse
+D = np.diag(std_deviations)
+Sigma = D @ rho @ D
+Sigma_inv = np.linalg.inv(Sigma)
+ones = np.ones(len(assets))
+
+# =====================================================================
+# PORTFOLIO 1: Global Minimum Variance (GMV) Portfolio
+# =====================================================================
+w_gmv = (Sigma_inv @ ones) / (ones.T @ Sigma_inv @ ones)
+ret_gmv = np.dot(w_gmv, mu)
+vol_gmv = np.sqrt(w_gmv.T @ Sigma @ w_gmv)
+
+# =====================================================================
+# PORTFOLIO 2: Tangency Portfolio (Max Sharpe Ratio Risky Portfolio)
+# =====================================================================
+excess_returns = mu - rf * ones
+w_tan = (Sigma_inv @ excess_returns) / (ones.T @ Sigma_inv @ excess_returns)
+ret_tan = np.dot(w_tan, mu)
+vol_tan = np.sqrt(w_tan.T @ Sigma @ w_tan)
+
+# =====================================================================
+# PORTFOLIO 3: Optimal Portfolio with 4.5% Target Return (Risky + Risk-Free)
+# =====================================================================
+# Using the Lagrangian solution framework:
+quadratic_form = excess_returns.T @ Sigma_inv @ excess_returns
+lambda_multiplier = (target_return - rf) / quadratic_form
+w_target_risky = lambda_multiplier * (Sigma_inv @ excess_returns)
+w_target_rf = 1.0 - np.sum(w_target_risky)
+
+ret_target = rf + np.dot(w_target_risky, excess_returns)
+vol_target = np.sqrt(w_target_risky.T @ Sigma @ w_target_risky)
+
+# =====================================================================
+# Print Results summary table
+# =====================================================================
+print("=====================================================================")
+print("                      PORTFOLIO ALLOCATION DATA                      ")
+print("=====================================================================")
+all_labels = assets + ['Risk-Free Asset']
+
+# Format allocations for the final printout
+df_weights = pd.DataFrame({
+    '1. GMV Portfolio': np.append(w_gmv, 0.0),
+    '2. Tangency Portfolio': np.append(w_tan, 0.0),
+    '3. Target Return 4.5%': np.append(w_target_risky, w_target_rf)
+}, index=all_labels)
+
+pd.options.display.float_format = '{:.2%}'.format
+print(df_weights)
+
+print("\n=====================================================================")
+print("                     PORTFOLIO METRICS SUMMARY                       ")
+print("=====================================================================")
+print(f"1. GMV Portfolio      -> Volatility: {vol_gmv*100:.2f}%, Expected Return: {ret_gmv*100:.2f}%")
+print(f"2. Tangency Portfolio -> Volatility: {vol_tan*100:.2f}%, Expected Return: {ret_tan*100:.2f}%")
+print(f"3. Target Return 4.5%  -> Volatility: {vol_target*100:.2f}%, Expected Return: {ret_target*100:.2f}%")
+
+# =====================================================================
+# Generate Plot Image
+# =====================================================================
+plt.figure(figsize=(10, 6.5))
+
+# Plot underlying individual risky assets
+plt.scatter(std_deviations, mu, color='black', marker='o', s=100, zorder=5)
+for i, asset in enumerate(assets):
+    plt.annotate(f" {asset}", (std_deviations[i], mu[i]), fontsize=10, weight='bold')
+
+# Plot the Risky Efficient Frontier Curve via analytical hyperbola formulation
+A = ones.T @ Sigma_inv @ ones
+B = ones.T @ Sigma_inv @ mu
+C = mu.T @ Sigma_inv @ mu
+delta = A * C - B**2
+
+target_returns_range = np.linspace(0.01, 0.15, 200)
+frontier_vols = np.sqrt((A * target_returns_range**2 - 2 * B * target_returns_range + C) / delta)
+plt.plot(frontier_vols, target_returns_range, color='gray', linestyle='--', label='Risky Feasible Frontier')
+
+# Plot the Capital Allocation Line (CAL) linking Risk-Free Asset and Tangency Portfolio
+sharpe_ratio = (ret_tan - rf) / vol_tan
+cal_vols = np.linspace(0.0, 0.08, 100)
+cal_returns = rf + sharpe_ratio * cal_vols
+plt.plot(cal_vols, cal_returns, color='blue', linestyle='-', label='Capital Allocation Line (CAL)')
+
+# Highlight the 3 requested portfolios
+plt.scatter(vol_gmv, ret_gmv, color='red', marker='X', s=150, zorder=6, label='1. GMV Portfolio')
+plt.scatter(vol_tan, ret_tan, color='orange', marker='^', s=150, zorder=6, label='2. Tangency Portfolio')
+plt.scatter(vol_target, ret_target, color='green', marker='*', s=200, zorder=6, label='3. Target Return 4.5% Portfolio')
+plt.scatter(0.0, rf, color='blue', marker='s', s=100, zorder=6, label='Risk-Free Asset (Cash)')
+
+# Format and dress the plot picture cleanly
+plt.title('Modern Portfolio Theory Frontiers & Key Strategic Allocations (Target 4.5%)', fontsize=12, weight='bold', pad=15)
+plt.xlabel('Portfolio Volatility (Standard Deviation $\sigma_p$)', fontsize=11)
+plt.ylabel('Portfolio Expected Return ($\mu_p$)', fontsize=11)
+plt.grid(True, linestyle=':', alpha=0.6)
+plt.xlim(-0.005, 0.15)
+plt.ylim(0.0, 0.13)
+
+# Display specific coordinate markers on the plot for clarity
+plt.text(vol_gmv + 0.003, ret_gmv - 0.002, f"({vol_gmv*100:.2f}%, {ret_gmv*100:.2f}%)", color='red', weight='bold')
+plt.text(vol_tan + 0.003, ret_tan - 0.002, f"({vol_tan*100:.2f}%, {ret_tan*100:.2f}%)", color='orange', weight='bold')
+plt.text(vol_target + 0.003, ret_target - 0.002, f"({vol_target*100:.2f}%, {ret_target*100:.2f}%)", color='green', weight='bold')
+
+plt.gca().xaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f'{x*100:.0f}%'))
+plt.gca().yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f'{y*100:.0f}%'))
+plt.legend(loc='lower right', frameon=True, facecolor='white', edgecolor='lightgray')
+
+plt.tight_layout()
+plt.show()
